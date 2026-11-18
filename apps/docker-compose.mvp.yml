@@ -1,0 +1,94 @@
+# Apply together with docker-compose.yml. The legacy database is retained for rollback.
+services:
+  device-db:
+    image: postgres:16-alpine
+    container_name: device-db
+    environment:
+      POSTGRES_DB: ${DEVICE_POSTGRES_DB}
+      POSTGRES_USER: ${DEVICE_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${DEVICE_POSTGRES_PASSWORD}
+    volumes:
+      - device_data:/var/lib/postgresql/data
+      - ./device-service/schema/init.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DEVICE_POSTGRES_USER} -d ${DEVICE_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: 
+      - smarthome-network
+
+  telemetry-db:
+    image: postgres:16-alpine
+    container_name: telemetry-db
+    environment:
+      POSTGRES_DB: ${TELEMETRY_POSTGRES_DB}
+      POSTGRES_USER: ${TELEMETRY_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${TELEMETRY_POSTGRES_PASSWORD}
+    volumes:
+      - telemetry_data:/var/lib/postgresql/data
+      - ./telemetry-service/init.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TELEMETRY_POSTGRES_USER} -d ${TELEMETRY_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - smarthome-network
+
+  device-service:
+    container_name: device-service
+    build:
+      context: ./device-service
+    environment:
+      PORT: "8082"
+      DATABASE_URL: postgres://${DEVICE_POSTGRES_USER}:${DEVICE_POSTGRES_PASSWORD}@device-db:5432/${DEVICE_POSTGRES_DB}
+    depends_on:
+      device-db:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
+    networks: 
+      - smarthome-network
+
+  telemetry-service:
+    container_name: telemetry-service
+    build:
+      context: ./telemetry-service
+    environment:
+      PORT: "8083"
+      DATABASE_URL: postgres://${TELEMETRY_POSTGRES_USER}:${TELEMETRY_POSTGRES_PASSWORD}@telemetry-db:5432/${TELEMETRY_POSTGRES_DB}
+      DEVICE_API_URL: http://device-service:8082
+      TEMPERATURE_API_URL: http://temperature-api:8081
+      HTTP_TIMEOUT_SECONDS: "3"
+    depends_on:
+      telemetry-db:
+        condition: service_healthy
+      device-service:
+        condition: service_started
+      temperature-api:
+        condition: service_started
+    ports:
+      - "8083:8083"
+    restart: unless-stopped
+    networks: 
+      - smarthome-network
+
+  app:
+    container_name: app-service
+    environment:
+      MIGRATION_MODE: services
+      DEVICE_API_URL: http://device-service:8082
+      TELEMETRY_API_URL: http://telemetry-service:8083
+    depends_on:
+      device-service:
+        condition: service_started
+      telemetry-service:
+        condition: service_started
+
+volumes:
+  device_data:
+  telemetry_data:
