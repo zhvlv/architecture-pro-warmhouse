@@ -1,0 +1,502 @@
+openapi: 3.1.0
+info:
+  title: Телеметрия — Python MVP
+  version: 1.0.0
+  description: Реализованы приём измерений, опрос имитатора и история в собственной PostgreSQL. Устройство проверяется
+    через Device API перед каждой операцией. Межсервисного FK нет. Времена ответа нормализуются в UTC, точность
+    хранения — микросекунды. API локального MVP без аутентификации.
+servers:
+- url: http://127.0.0.1:8083
+  description: Локальный учебный запуск
+x-implementation-status: implemented
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Проверить готовность
+      tags:
+      - Диагностика
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: ok
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Telemetry database unavailable
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+      description: Проверяет собственную PostgreSQL. Отказ Device/Temperature API выявляется при запросе к ним и
+        возвращает 503.
+  /api/v1/readings:
+    post:
+      operationId: recordReading
+      summary: Записать измерение
+      tags:
+      - API
+      responses:
+        '201':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reading'
+              example:
+                id: 21
+                device_id: 7
+                value: 0
+                unit: °C
+                status: active
+                timestamp: '2026-11-18T14:00:00Z'
+                source: manual
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: device_id must be a positive integer
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device not found
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '413':
+          description: Тело запроса слишком велико
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Request body too large
+        '415':
+          description: Требуется Content-Type application/json
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Content-Type must be application/json
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device service unavailable
+      description: 'source задаёт сервер: manual. Неизвестные поля, NaN, Infinity, bool вместо числа и timestamp
+        без зоны запрещены. POST не идемпотентен: повтор создаёт ещё одну запись. Максимум тела — 65536 байт.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReadingInput'
+            example:
+              device_id: 7
+              value: 0
+              unit: °C
+              status: active
+              timestamp: '2026-11-18T14:00:00Z'
+  /api/v1/devices/{id}/readings/latest:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 7
+    get:
+      operationId: getLatestReading
+      summary: Получить актуальное или сохранённое измерение
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reading'
+              example:
+                id: 22
+                device_id: 7
+                value: 22.34
+                unit: °C
+                status: active
+                timestamp: '2026-11-18T14:00:00Z'
+                source: simulator
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: refresh must be true or false
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: No readings for this device
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device service unavailable
+      description: При refresh=true (по умолчанию) температурное устройство опрашивается и результат сохраняется.
+        В запрос имитатору передаются location и sensor_id. При refresh=false возвращается последнее сохранённое
+        по timestamp, затем id. Для остальных типов обновление не вызывает температурный имитатор. Нет показаний
+        — 404. Ошибка имитатора — 503, даже если в БД есть старые данные. Удалённое устройство — 404.
+      parameters:
+      - name: refresh
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+        description: Только литералы true и false
+  /api/v1/devices/{id}/readings:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 7
+    get:
+      operationId: getReadingHistory
+      summary: Получить историю измерений
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reading'
+              example:
+              - id: 21
+                device_id: 7
+                value: 0
+                unit: °C
+                status: active
+                timestamp: '2026-11-18T14:00:00Z'
+                source: manual
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: limit must be an integer from 1 to 1000
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device not found
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device service unavailable
+      description: Сортировка observed_at DESC, id DESC. Для существующего устройства без измерений — []. При удалённом
+        устройстве история остаётся в БД, но API возвращает 404. Неизвестные и повторные query-параметры запрещены.
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 100
+security: []
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          minLength: 1
+      required:
+      - error
+      additionalProperties: false
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          const: ok
+      required:
+      - status
+      additionalProperties: false
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+      required:
+      - message
+      additionalProperties: false
+    DeviceType:
+      type: string
+      enum:
+      - temperature
+      - heating
+      - light
+      - gate
+      - camera
+    Status:
+      type: string
+      enum:
+      - active
+      - inactive
+      - error
+    DeviceState:
+      oneOf:
+      - type: object
+        maxProperties: 0
+        additionalProperties: false
+      - type: object
+        properties:
+          power:
+            type: string
+            enum:
+            - 'on'
+            - 'off'
+        required:
+        - power
+        additionalProperties: false
+      - type: object
+        properties:
+          position:
+            type: string
+            enum:
+            - open
+            - closed
+        required:
+        - position
+        additionalProperties: false
+      - type: object
+        properties:
+          streaming:
+            type: boolean
+        required:
+        - streaming
+        additionalProperties: false
+    CommandInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+          - turn_on
+          - turn_off
+          - open
+          - close
+          - start_stream
+          - stop_stream
+      required:
+      - action
+      additionalProperties: false
+    Command:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        action:
+          type: string
+          maxLength: 30
+          minLength: 1
+        status:
+          type: string
+          const: completed
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/DeviceState'
+      required:
+      - id
+      - device_id
+      - action
+      - status
+      - created_at
+      - completed_at
+      - state
+      additionalProperties: false
+    Reading:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        value:
+          type: number
+          description: Конечное число; ноль допустим.
+        unit:
+          type: string
+          maxLength: 32
+        status:
+          $ref: '#/components/schemas/Status'
+        timestamp:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum:
+          - manual
+          - simulator
+      required:
+      - id
+      - device_id
+      - value
+      - unit
+      - status
+      - timestamp
+      - source
+      additionalProperties: false
+    ReadingInput:
+      type: object
+      properties:
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        value:
+          type: number
+          description: Конечное число; ноль допустим.
+        unit:
+          type: string
+          maxLength: 32
+          description: Если отсутствует, берётся unit из Device Service.
+        status:
+          $ref: '#/components/schemas/Status'
+          default: active
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC3339 с часовым поясом, до 9 знаков дробной секунды. Если отсутствует, текущее UTC-время
+            сервиса.
+      required:
+      - device_id
+      - value
+      additionalProperties: false

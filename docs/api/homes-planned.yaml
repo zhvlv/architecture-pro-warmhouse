@@ -1,0 +1,540 @@
+openapi: 3.1.0
+info:
+  title: Дома и модули — целевой контракт, не реализован
+  version: 0.1.0-target
+  description: ПЛАН. Этого сервиса и маршрутов в Docker MVP нет. Контракт для следующего этапа самообслуживания.
+    Сервис владеет домами, каталогом модулей и подключением модуля к дому. Devices не изменяет эти таблицы. owner_id
+    берётся из UUID subject OIDC-токена, а не из тела запроса; каждый доступ к house проверяется по владельцу.
+servers:
+- url: https://api.warmhouse.example
+  description: Проектируемый адрес; сервиса в MVP нет
+x-implementation-status: planned
+paths:
+  /api/v1/houses:
+    get:
+      operationId: listHouses
+      summary: Получить свои дома
+      tags:
+      - Дома
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/House'
+              example:
+              - id: 1
+                owner_id: e65e3641-95a6-4587-a44e-e40630b10d74
+                name: Demo house
+                address: Example Street, 1
+                region: Demo region
+                created_at: '2026-11-18T14:00:00Z'
+        '401':
+          description: Требуется аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Authentication required
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+    post:
+      operationId: createHouse
+      summary: Создать дом
+      tags:
+      - Дома
+      responses:
+        '201':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/House'
+              example:
+                id: 1
+                owner_id: e65e3641-95a6-4587-a44e-e40630b10d74
+                name: Demo house
+                address: Example Street, 1
+                region: Demo region
+                created_at: '2026-11-18T14:00:00Z'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid request
+        '401':
+          description: Требуется аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Authentication required
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HouseCreate'
+            example:
+              name: Demo house
+              address: Example Street, 1
+              region: Demo region
+  /api/v1/houses/{houseId}:
+    parameters:
+    - name: houseId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 1
+    get:
+      operationId: getHouse
+      summary: Получить свой дом
+      tags:
+      - Дома
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/House'
+              example:
+                id: 1
+                owner_id: e65e3641-95a6-4587-a44e-e40630b10d74
+                name: Demo house
+                address: Example Street, 1
+                region: Demo region
+                created_at: '2026-11-18T14:00:00Z'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid request
+        '401':
+          description: Требуется аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Authentication required
+        '403':
+          description: Нет доступа к дому
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: House access denied
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Resource not found
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+  /api/v1/modules:
+    get:
+      operationId: listModules
+      summary: Посмотреть каталог модулей
+      tags:
+      - Модули
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Module'
+              example:
+              - code: heating
+                name: Отопление
+                device_types:
+                - temperature
+                - heating
+        '401':
+          description: Требуется аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Authentication required
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: Каталог задаёт поддерживаемые типы устройств. Добавление нового типа выполняется через версионируемый
+        профиль, а не отдельный сервис на каждый прибор.
+  /api/v1/houses/{houseId}/modules/{moduleCode}:
+    parameters:
+    - name: houseId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 1
+    - name: moduleCode
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+        - heating
+        - light
+        - gate
+        - camera
+      example: heating
+    put:
+      operationId: configureHouseModule
+      summary: Подключить или отключить модуль дома
+      tags:
+      - Модули
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HouseModule'
+              example:
+                house_id: 1
+                module_code: heating
+                enabled: true
+                configured_at: '2026-11-18T14:00:00Z'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid request
+        '401':
+          description: Требуется аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Authentication required
+        '403':
+          description: Нет доступа к дому
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: House access denied
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Resource not found
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: Идемпотентная установка enabled. Отключение модуля блокирует новые команды его устройств, но
+        не удаляет историю.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required:
+              - enabled
+              additionalProperties: false
+            example:
+              enabled: true
+security:
+- oidc: []
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          minLength: 1
+      required:
+      - error
+      additionalProperties: false
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          const: ok
+      required:
+      - status
+      additionalProperties: false
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+      required:
+      - message
+      additionalProperties: false
+    DeviceType:
+      type: string
+      enum:
+      - temperature
+      - heating
+      - light
+      - gate
+      - camera
+    Status:
+      type: string
+      enum:
+      - active
+      - inactive
+      - error
+    DeviceState:
+      oneOf:
+      - type: object
+        maxProperties: 0
+        additionalProperties: false
+      - type: object
+        properties:
+          power:
+            type: string
+            enum:
+            - 'on'
+            - 'off'
+        required:
+        - power
+        additionalProperties: false
+      - type: object
+        properties:
+          position:
+            type: string
+            enum:
+            - open
+            - closed
+        required:
+        - position
+        additionalProperties: false
+      - type: object
+        properties:
+          streaming:
+            type: boolean
+        required:
+        - streaming
+        additionalProperties: false
+    CommandInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+          - turn_on
+          - turn_off
+          - open
+          - close
+          - start_stream
+          - stop_stream
+      required:
+      - action
+      additionalProperties: false
+    Command:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        action:
+          type: string
+          maxLength: 30
+          minLength: 1
+        status:
+          type: string
+          const: completed
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/DeviceState'
+      required:
+      - id
+      - device_id
+      - action
+      - status
+      - created_at
+      - completed_at
+      - state
+      additionalProperties: false
+    House:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        owner_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        address:
+          type: string
+          maxLength: 250
+          minLength: 1
+        region:
+          type: string
+          maxLength: 100
+          minLength: 1
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - owner_id
+      - name
+      - address
+      - region
+      - created_at
+      additionalProperties: false
+    HouseCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        address:
+          type: string
+          maxLength: 250
+          minLength: 1
+        region:
+          type: string
+          maxLength: 100
+          minLength: 1
+      required:
+      - name
+      - address
+      - region
+      additionalProperties: false
+    Module:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+          - heating
+          - light
+          - gate
+          - camera
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        device_types:
+          type: array
+          items:
+            type: string
+            minLength: 1
+      required:
+      - code
+      - name
+      - device_types
+      additionalProperties: false
+    HouseModule:
+      type: object
+      properties:
+        house_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        module_code:
+          type: string
+          minLength: 1
+        enabled:
+          type: boolean
+        configured_at:
+          type: string
+          format: date-time
+      required:
+      - house_id
+      - module_code
+      - enabled
+      - configured_at
+      additionalProperties: false
+  securitySchemes:
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://identity.warmhouse.example/.well-known/openid-configuration
+      description: 'План: bearer access token, проверка подписи/issuer/audience и принадлежности дома субъекту.
+        В MVP не реализовано.'

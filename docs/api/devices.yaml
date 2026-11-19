@@ -1,0 +1,798 @@
+openapi: 3.1.0
+info:
+  title: Устройства — Java MVP
+  version: 1.0.0
+  description: Реализованный реестр устройств и синхронная имитация команд. Собственная PostgreSQL. Текстовые поля
+    обрезаются по краям; неизвестные поля запрещены. Аутентификации в локальном MVP нет. В целевой системе перед
+    этими операциями появятся OIDC и проверка доступа к дому.
+servers:
+- url: http://127.0.0.1:8082
+  description: Локальный учебный запуск
+x-implementation-status: implemented
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Проверить готовность
+      tags:
+      - Диагностика
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: ok
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device database is unavailable
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+      description: Проверяет только собственную PostgreSQL, а не доступность физических устройств.
+  /api/v1/devices:
+    get:
+      operationId: listDevices
+      summary: Получить реестр
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+              example:
+              - id: 7
+                house_id: 1
+                serial_number: demo-temperature-7
+                name: Living room sensor
+                type: temperature
+                location: Living Room
+                unit: °C
+                status: inactive
+                state: {}
+                created_at: '2026-11-18T14:00:00Z'
+                last_updated: '2026-11-18T14:00:00Z'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Unsupported device type
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device database is unavailable
+      parameters:
+      - name: type
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/DeviceType'
+        description: Необязательный фильтр по типу
+    post:
+      operationId: createDevice
+      summary: Зарегистрировать устройство
+      tags:
+      - API
+      responses:
+        '201':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example:
+                id: 7
+                house_id: 1
+                serial_number: demo-temperature-7
+                name: Living room sensor
+                type: temperature
+                location: Living Room
+                unit: °C
+                status: inactive
+                state: {}
+                created_at: '2026-11-18T14:00:00Z'
+                last_updated: '2026-11-18T14:00:00Z'
+          headers:
+            Location:
+              description: Путь созданного устройства
+              schema:
+                type: string
+              example: /api/v1/devices/7
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: name must be a string
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device database is unavailable
+      description: Начальные status=inactive и state={}. Совпавший serial_number возвращает 400. Показание здесь
+        не создаётся.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCreate'
+            example:
+              name: Living room sensor
+              type: temperature
+              location: Living Room
+              unit: °C
+              serial_number: demo-temperature-7
+  /api/v1/devices/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 7
+    get:
+      operationId: getDevice
+      summary: Получить устройство
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example:
+                id: 7
+                house_id: 1
+                serial_number: demo-temperature-7
+                name: Living room sensor
+                type: temperature
+                location: Living Room
+                unit: °C
+                status: inactive
+                state: {}
+                created_at: '2026-11-18T14:00:00Z'
+                last_updated: '2026-11-18T14:00:00Z'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device ID must be a positive integer
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device not found
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device database is unavailable
+    put:
+      operationId: updateDevice
+      summary: Частично изменить метаданные
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example:
+                id: 7
+                house_id: 1
+                serial_number: demo-temperature-7
+                name: Living room sensor
+                type: temperature
+                location: Bedroom
+                unit: °C
+                status: inactive
+                state: {}
+                created_at: '2026-11-18T14:00:00Z'
+                last_updated: '2026-11-18T14:00:00Z'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: At least one update field is required
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device not found
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device database is unavailable
+      description: PUT имеет семантику частичного изменения для совместимости с исходным API. Нужен хотя бы один
+        ключ. house_id и serial_number после регистрации не изменяются. Смена type сбрасывает state. value не является
+        телеметрией этого сервиса.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceUpdate'
+            example:
+              location: Bedroom
+    delete:
+      operationId: deleteDevice
+      summary: Мягко удалить устройство
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: Sensor deleted successfully
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device ID must be a positive integer
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device not found
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device database is unavailable
+      description: После удаления GET/list не показывают устройство, новые команды запрещены. История результатов
+        команд сохраняется. Повторный DELETE возвращает 404.
+  /api/v1/devices/{id}/commands:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 9
+    post:
+      operationId: executeCommand
+      summary: Имитировать команду устройству
+      tags:
+      - API
+      responses:
+        '201':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Command'
+              example:
+                id: d1290bb5-2816-4301-b37d-0bb149945c4c
+                device_id: 9
+                action: turn_on
+                status: completed
+                created_at: '2026-11-18T14:00:00Z'
+                completed_at: '2026-11-18T14:00:00Z'
+                state:
+                  power: 'on'
+          headers:
+            Location:
+              description: Путь результата команды
+              schema:
+                type: string
+              example: /api/v1/commands/d1290bb5-2816-4301-b37d-0bb149945c4c
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device ID must be a positive integer
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device not found
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device database is unavailable
+      description: 'heating/light: turn_on, turn_off; gate: open, close; camera: start_stream, stop_stream. У temperature
+        команд нет. Неподдерживаемое сочетание типа и действия — 400. Изменение state и запись результата атомарны
+        в одной БД. Это ответ симулятора, не подтверждение физического устройства. Каждый POST создаёт новый UUID.
+        Idempotency-Key не поддерживается.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandInput'
+            example:
+              action: turn_on
+  /api/v1/commands/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: d1290bb5-2816-4301-b37d-0bb149945c4c
+    get:
+      operationId: getCommand
+      summary: Получить сохранённый результат
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Command'
+              example:
+                id: d1290bb5-2816-4301-b37d-0bb149945c4c
+                device_id: 9
+                action: turn_on
+                status: completed
+                created_at: '2026-11-18T14:00:00Z'
+                completed_at: '2026-11-18T14:00:00Z'
+                state:
+                  power: 'on'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid command ID
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Command not found
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device database is unavailable
+      description: Доступен и после мягкого удаления устройства. Некорректный UUID — 400.
+security: []
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          minLength: 1
+      required:
+      - error
+      additionalProperties: false
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          const: ok
+      required:
+      - status
+      additionalProperties: false
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+      required:
+      - message
+      additionalProperties: false
+    DeviceType:
+      type: string
+      enum:
+      - temperature
+      - heating
+      - light
+      - gate
+      - camera
+    Status:
+      type: string
+      enum:
+      - active
+      - inactive
+      - error
+    DeviceState:
+      oneOf:
+      - type: object
+        maxProperties: 0
+        additionalProperties: false
+      - type: object
+        properties:
+          power:
+            type: string
+            enum:
+            - 'on'
+            - 'off'
+        required:
+        - power
+        additionalProperties: false
+      - type: object
+        properties:
+          position:
+            type: string
+            enum:
+            - open
+            - closed
+        required:
+        - position
+        additionalProperties: false
+      - type: object
+        properties:
+          streaming:
+            type: boolean
+        required:
+        - streaming
+        additionalProperties: false
+    CommandInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+          - turn_on
+          - turn_off
+          - open
+          - close
+          - start_stream
+          - stop_stream
+      required:
+      - action
+      additionalProperties: false
+    Command:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        action:
+          type: string
+          maxLength: 30
+          minLength: 1
+        status:
+          type: string
+          const: completed
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/DeviceState'
+      required:
+      - id
+      - device_id
+      - action
+      - status
+      - created_at
+      - completed_at
+      - state
+      additionalProperties: false
+    Device:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        house_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        serial_number:
+          type: string
+          maxLength: 100
+          minLength: 1
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        location:
+          type: string
+          maxLength: 100
+          minLength: 1
+        unit:
+          type: string
+          maxLength: 20
+        status:
+          $ref: '#/components/schemas/Status'
+        state:
+          $ref: '#/components/schemas/DeviceState'
+        created_at:
+          type: string
+          format: date-time
+        last_updated:
+          type: string
+          format: date-time
+      required:
+      - id
+      - house_id
+      - serial_number
+      - name
+      - type
+      - location
+      - unit
+      - status
+      - state
+      - created_at
+      - last_updated
+      additionalProperties: false
+    DeviceCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        location:
+          type: string
+          maxLength: 100
+          minLength: 1
+        unit:
+          type: string
+          maxLength: 20
+          description: По умолчанию °C для temperature, пустая строка для других типов.
+        house_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+          default: 1
+        serial_number:
+          type: string
+          maxLength: 100
+          minLength: 1
+          description: Если отсутствует, сервер создаёт UUID.
+      required:
+      - name
+      - type
+      - location
+      additionalProperties: false
+    DeviceUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        location:
+          type: string
+          maxLength: 100
+          minLength: 1
+        unit:
+          type: string
+          maxLength: 20
+        status:
+          $ref: '#/components/schemas/Status'
+        value:
+          type: number
+          description: 'Совместимость с DTO монолита: проверяется как конечное число, но не сохраняется в Device
+            Service.'
+      required: []
+      additionalProperties: false
+      minProperties: 1

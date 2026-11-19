@@ -1,0 +1,789 @@
+openapi: 3.1.0
+info:
+  title: Совместимый фасад / исходный монолит — Go
+  version: 1.0.0
+  description: 'Один публичный URL, два явных режима MIGRATION_MODE. legacy: собственная sensors в PostgreSQL и
+    имитатор температуры. services: метаданные в Devices, измерения в Telemetry, без скрытого отката в legacy-БД
+    при ошибке. Sensor DTO не содержит house_id, serial_number и state: расширенные поля доступны в Devices API.
+    Регистрация не опрашивает датчик и возвращает начальные value=0/status=inactive. Локальный MVP без аутентификации;
+    перенос существующих данных выполняется отдельно.'
+servers:
+- url: http://127.0.0.1:8080
+  description: Локальный учебный запуск
+x-implementation-status: implemented
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Проверить готовность
+      tags:
+      - Диагностика
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: ok
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: legacy проверяет собственную PostgreSQL; services — /health сервисов устройств и телеметрии.
+        Имитатор проверяется при чтении показаний.
+  /api/v1/sensors:
+    get:
+      operationId: listSensors
+      summary: Получить датчики с текущими показаниями
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sensor'
+              example:
+              - id: 7
+                name: Living room sensor
+                type: temperature
+                location: Living Room
+                unit: °C
+                status: active
+                created_at: '2026-11-18T14:00:00Z'
+                last_updated: '2026-11-18T14:00:00Z'
+                value: 22.34
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: Пустой реестр — []. Для температурных датчиков каждый запрос получает новое значение. В services
+        измерение сохраняется в Telemetry; в legacy новое значение попадает только в ответ, не в sensors. Для нового
+        нетемпературного устройства без показаний фасад возвращает исходное value=0.
+    post:
+      operationId: createSensor
+      summary: Создать датчик или устройство
+      tags:
+      - API
+      responses:
+        '201':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sensor'
+              example:
+                id: 7
+                name: Living room sensor
+                type: temperature
+                location: Living Room
+                unit: °C
+                status: inactive
+                created_at: '2026-11-18T14:00:00Z'
+                last_updated: '2026-11-18T14:00:00Z'
+                value: 0
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: name, type and location are required
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: Совместим с исходной Postman-коллекцией. services передаёт регистрацию в Device API; legacy создаёт
+        строку sensors. В services неизвестные поля запрещены; в legacy JSON binder их игнорирует.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SensorCreate'
+            example:
+              name: Living room sensor
+              type: temperature
+              location: Living Room
+              unit: °C
+  /api/v1/sensors/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 7
+    get:
+      operationId: getSensor
+      summary: Получить датчик
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sensor'
+              example:
+                id: 7
+                name: Living room sensor
+                type: temperature
+                location: Living Room
+                unit: °C
+                status: active
+                created_at: '2026-11-18T14:00:00Z'
+                last_updated: '2026-11-18T14:00:00Z'
+                value: 22.34
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid sensor ID
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Sensor not found
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+    put:
+      operationId: updateSensor
+      summary: Частично изменить датчик
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sensor'
+              example:
+                id: 7
+                name: Living room sensor
+                type: temperature
+                location: Living Room
+                unit: °C
+                status: active
+                created_at: '2026-11-18T14:00:00Z'
+                last_updated: '2026-11-18T14:00:00Z'
+                value: 0
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: At least one field is required
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Sensor not found
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: 'Хотя метод PUT, обновляются только переданные поля. Нужен хотя бы один ключ. В services метаданные
+        и value обновляются двумя запросами без распределённой транзакции. Если второй запрос завершился ошибкой,
+        метаданные уже могли измениться: ответ 503 требует проверки перед повтором. Если value не передано, services
+        возвращает новое показание температурного устройства. legacy игнорирует пустые строковые значения; services
+        применяет правила Device API.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SensorUpdate'
+            example:
+              value: 0
+              status: active
+    delete:
+      operationId: deleteSensor
+      summary: Удалить датчик
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: Sensor deleted successfully
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid sensor ID
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Sensor not found
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: В legacy физически удаляется строка sensors; в services вызывается мягкое удаление Device API.
+  /api/v1/sensors/{id}/value:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 7
+    patch:
+      operationId: updateSensorValue
+      summary: Записать значение и статус
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: Sensor value updated successfully
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: value and a valid status are required
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Sensor not found
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: value=0 допустимо. В legacy обновляет sensors; в services записывает manual-измерение в Telemetry.
+        Следующее чтение температурного устройства вновь опросит имитатор.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValueUpdate'
+            example:
+              value: 0
+              status: active
+  /api/v1/sensors/temperature/{location}:
+    get:
+      operationId: getTemperatureForLocation
+      summary: Диагностический запрос по комнате
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationTemperature'
+              example:
+                location: Living Room
+                value: 22.34
+                unit: °C
+                status: active
+                timestamp: '2026-11-18T14:00:00Z'
+                description: Simulated temperature reading
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Temperature service is unavailable
+      description: Прямой опрос имитатора, доступен в обоих режимах. Не создаёт устройство и не сохраняет историю
+        в Telemetry. Пробелы передаются как URL encoding.
+      parameters:
+      - name: location
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 100
+          minLength: 1
+        example: Living Room
+  /api/v1/sensors/{id}/commands:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9223372036854775807
+      example: 9
+    post:
+      operationId: executeSensorCommand
+      summary: Передать команду устройству (только services)
+      tags:
+      - API
+      responses:
+        '201':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Command'
+              example:
+                id: d1290bb5-2816-4301-b37d-0bb149945c4c
+                device_id: 9
+                action: turn_on
+                status: completed
+                created_at: '2026-11-18T14:00:00Z'
+                completed_at: '2026-11-18T14:00:00Z'
+                state:
+                  power: 'on'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid sensor ID
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Device not found
+            text/plain:
+              schema:
+                type: string
+              example: 404 page not found
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: Маршрут зарегистрирован только в MIGRATION_MODE=services. В legacy отсутствует (404 от маршрутизатора).
+        Правила действий и отсутствие Idempotency-Key такие же, как в Device API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandInput'
+            example:
+              action: turn_on
+      x-migration-mode: services
+  /api/v1/commands/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: d1290bb5-2816-4301-b37d-0bb149945c4c
+    get:
+      operationId: getSensorCommand
+      summary: Прочитать результат команды (только services)
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Command'
+              example:
+                id: d1290bb5-2816-4301-b37d-0bb149945c4c
+                device_id: 9
+                action: turn_on
+                status: completed
+                created_at: '2026-11-18T14:00:00Z'
+                completed_at: '2026-11-18T14:00:00Z'
+                state:
+                  power: 'on'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid command ID
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Command not found
+            text/plain:
+              schema:
+                type: string
+              example: 404 page not found
+        '503':
+          description: База данных или зависимый сервис недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Required service is unavailable
+      description: Маршрут зарегистрирован только в services; проксируется в Device API.
+      x-migration-mode: services
+security: []
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          minLength: 1
+      required:
+      - error
+      additionalProperties: false
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          const: ok
+      required:
+      - status
+      additionalProperties: false
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+      required:
+      - message
+      additionalProperties: false
+    DeviceType:
+      type: string
+      enum:
+      - temperature
+      - heating
+      - light
+      - gate
+      - camera
+    Status:
+      type: string
+      enum:
+      - active
+      - inactive
+      - error
+    DeviceState:
+      oneOf:
+      - type: object
+        maxProperties: 0
+        additionalProperties: false
+      - type: object
+        properties:
+          power:
+            type: string
+            enum:
+            - 'on'
+            - 'off'
+        required:
+        - power
+        additionalProperties: false
+      - type: object
+        properties:
+          position:
+            type: string
+            enum:
+            - open
+            - closed
+        required:
+        - position
+        additionalProperties: false
+      - type: object
+        properties:
+          streaming:
+            type: boolean
+        required:
+        - streaming
+        additionalProperties: false
+    CommandInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+          - turn_on
+          - turn_off
+          - open
+          - close
+          - start_stream
+          - stop_stream
+      required:
+      - action
+      additionalProperties: false
+    Command:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        action:
+          type: string
+          maxLength: 30
+          minLength: 1
+        status:
+          type: string
+          const: completed
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/DeviceState'
+      required:
+      - id
+      - device_id
+      - action
+      - status
+      - created_at
+      - completed_at
+      - state
+      additionalProperties: false
+    Sensor:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        type:
+          type: string
+          description: В services поддерживаются temperature/heating/light/gate/camera; legacy хранит строковый
+            тип.
+          maxLength: 50
+          minLength: 1
+        location:
+          type: string
+          maxLength: 100
+          minLength: 1
+        unit:
+          type: string
+          maxLength: 20
+        status:
+          $ref: '#/components/schemas/Status'
+        created_at:
+          type: string
+          format: date-time
+        last_updated:
+          type: string
+          format: date-time
+        value:
+          type: number
+      required:
+      - id
+      - name
+      - type
+      - location
+      - unit
+      - status
+      - created_at
+      - last_updated
+      - value
+      additionalProperties: false
+    SensorCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        type:
+          type: string
+          description: В services поддерживаются temperature/heating/light/gate/camera; legacy хранит строковый
+            тип.
+          maxLength: 50
+          minLength: 1
+        location:
+          type: string
+          maxLength: 100
+          minLength: 1
+        unit:
+          type: string
+          maxLength: 20
+        house_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+          description: 'Только services: default=1. В legacy игнорируется.'
+        serial_number:
+          type: string
+          description: Только services; по умолчанию UUID. В legacy игнорируется.
+          maxLength: 100
+          minLength: 1
+      required:
+      - name
+      - type
+      - location
+      additionalProperties: false
+    SensorUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        type:
+          type: string
+          description: В services поддерживаются temperature/heating/light/gate/camera; legacy хранит строковый
+            тип.
+          maxLength: 50
+          minLength: 1
+        location:
+          type: string
+          maxLength: 100
+          minLength: 1
+        unit:
+          type: string
+          maxLength: 20
+        status:
+          $ref: '#/components/schemas/Status'
+        value:
+          type: number
+      required: []
+      additionalProperties: false
+      minProperties: 1
+    ValueUpdate:
+      type: object
+      properties:
+        value:
+          type: number
+        status:
+          $ref: '#/components/schemas/Status'
+      required:
+      - value
+      - status
+      additionalProperties: false
+    LocationTemperature:
+      type: object
+      properties:
+        location:
+          type: string
+          maxLength: 100
+          minLength: 1
+        value:
+          type: number
+          minimum: -20
+          maximum: 45
+        unit:
+          type: string
+          const: °C
+        status:
+          type: string
+          const: active
+        timestamp:
+          type: string
+          format: date-time
+        description:
+          type: string
+          minLength: 1
+      required:
+      - location
+      - value
+      - unit
+      - status
+      - timestamp
+      - description
+      additionalProperties: false
