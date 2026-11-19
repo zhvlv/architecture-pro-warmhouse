@@ -7,7 +7,7 @@ Container_Ext(facade, "Go-фасад / новый клиент", "HTTP/JSON")
 Container_Ext(telemetry, "Telemetry service", "Python", "Читает метаданные устройства")
 ContainerDb(db, "device-db", "PostgreSQL", "devices и device_commands")
 Container_Boundary(service, "Device service — MVP") {
- Component(http, "ApiServer", "JDK HttpServer", "Маршрутизация, JSON, коды ошибок, ограничение размера тела", $tags="mvp")
+ Component(http, "ApiServer", "JDK HttpServer", "Маршрутизация, JSON, коды ошибок", $tags="mvp")
  Component(application, "DeviceService", "Java class", "Валидация метаданных, допустимых типов и команд", $tags="mvp")
  Component(state, "DeviceState", "Java class", "Матрица возможностей: отопление/свет, ворота, камера. Имитация выполнения", $tags="mvp")
  Component(port, "DeviceRepository", "Java interface", "Контракт доступа к устройствам и журналу команд", $tags="mvp")
