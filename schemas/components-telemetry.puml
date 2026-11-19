@@ -1,0 +1,34 @@
+@startuml
+!include <C4/C4_Component>
+!include ./_style.puml
+title Телеметрия — компоненты Python-сервиса
+LAYOUT_TOP_DOWN()
+Container_Ext(facade, "Go-фасад", "HTTP/JSON")
+Container_Ext(devices, "Device service", "Java", "Метаданные и проверка существования")
+Container_Ext(temp, "temperature-api", "Go", "Симулятор датчиков")
+ContainerDb(db, "telemetry-db", "PostgreSQL", "readings")
+Container_Boundary(service, "Telemetry service — MVP") {
+ Component(http, "TelemetryRequestHandler", "ThreadingHTTPServer", "JSON API и валидация параметров", $tags="mvp")
+ Component(application, "TelemetryService", "Python class", "Ручной приём; refresh; последнее значение и история", $tags="mvp")
+ Component(validation, "Reading / Device и валидаторы", "Dataclasses", "Конечное число, положительный ID, UTC timestamp", $tags="mvp")
+ Component(deviceClient, "HttpDeviceClient", "HTTP adapter", "Проверяет тип, location и unit", $tags="mvp")
+ Component(temperatureClient, "HttpTemperatureClient", "HTTP adapter", "Передаёт sensor_id + location; проверяет совпадение ID", $tags="mvp")
+ Component(repository, "PostgresReadingRepository", "psycopg", "Добавление показаний и упорядоченная выборка", $tags="mvp")
+ Component(ingestion, "Device event consumer", "MQTT/HTTPS adapter", "Потоковый приём показаний вместо pull при чтении", $tags="planned")
+ Component(publisher, "Outbox publisher", "Worker", "telemetry.recorded после commit", $tags="planned")
+}
+Container_Ext(broker, "Доменный брокер", "RabbitMQ", "Целевой этап")
+Rel(facade, http, "Пишет показания; читает latest/history", "REST")
+Rel(http, application, "Вызывает use case")
+Rel(application, validation, "Проверяет данные")
+Rel(application, deviceClient, "Получает устройство")
+Rel(deviceClient, devices, "Проверяет метаданные", "GET /api/v1/devices/{id}")
+Rel(application, temperatureClient, "Обновляет температуру по требованию")
+Rel(temperatureClient, temp, "Запрашивает с тайм-аутом", "GET /temperature?sensor_id=...&location=...")
+Rel(application, repository, "Сохраняет; читает историю")
+Rel(repository, db, "Работает со своими данными", "SQL")
+Rel(ingestion, application, "Будет передавать нормализованное показание")
+Rel(publisher, db, "Будет читать outbox", "SQL")
+Rel(publisher, broker, "Будет публиковать измерения", "AMQP")
+SHOW_LEGEND()
+@enduml

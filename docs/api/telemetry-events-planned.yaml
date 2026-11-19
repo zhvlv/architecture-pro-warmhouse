@@ -1,0 +1,310 @@
+asyncapi: 3.0.0
+id: urn:warmhouse:telemetry
+info:
+  title: WarmHouse telemetry — план публикации событий
+  version: 0.1.0-target
+  description: 'ПЛАН. RabbitMQ и публикация событий не входят в реализованный MVP. Это исходящие доменные события
+    одного сервиса, не MQTT-трафик устройств. MQTT-шлюз партнёрского оборудования — отдельная будущая интеграция.
+    Планируется exchange warmhouse.events типа topic, ключ маршрутизации совпадает с channel address. Доставка at-least-once:
+    outbox у отправителя, подтверждения брокера, дедупликация event_id у потребителя, ограниченные повторы и отдельная
+    DLQ; порядок гарантируется только внутри потока одного устройства.'
+defaultContentType: application/json
+x-implementation-status: planned
+servers:
+  production:
+    host: rabbitmq.warmhouse.example:5671
+    protocol: amqps
+    description: Проектируемый адрес. Не развёрнут в MVP.
+    security:
+    - $ref: '#/components/securitySchemes/brokerCredentials'
+channels:
+  TelemetryRecorded:
+    address: telemetry.recorded
+    description: Routing key в exchange warmhouse.events. Потребители имеют собственные durable queues.
+    messages:
+      TelemetryRecorded:
+        $ref: '#/components/messages/TelemetryRecorded'
+operations:
+  publishTelemetryRecorded:
+    action: send
+    summary: Опубликовать telemetry.recorded
+    channel:
+      $ref: '#/channels/TelemetryRecorded'
+    messages:
+    - $ref: '#/channels/TelemetryRecorded/messages/TelemetryRecorded'
+components:
+  securitySchemes:
+    brokerCredentials:
+      type: userPassword
+      description: 'План: отдельная учётная запись сервиса с минимальными правами на exchange; TLS.'
+  messages:
+    TelemetryRecorded:
+      name: telemetry.recorded
+      title: telemetry.recorded
+      contentType: application/json
+      correlationId:
+        description: ID события для дедупликации потребителем
+        location: $message.payload#/event_id
+      payload:
+        $ref: '#/components/schemas/TelemetryRecordedEvent'
+      examples:
+      - name: example
+        payload:
+          event_id: d1290bb5-2816-4301-b37d-0bb149945c4c
+          event_type: telemetry.recorded
+          schema_version: 1
+          occurred_at: '2026-11-18T14:00:00Z'
+          house_id: 1
+          data:
+            id: 21
+            device_id: 7
+            value: 0
+            unit: °C
+            status: active
+            timestamp: '2026-11-18T14:00:00Z'
+            source: manual
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          minLength: 1
+      required:
+      - error
+      additionalProperties: false
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          const: ok
+      required:
+      - status
+      additionalProperties: false
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+      required:
+      - message
+      additionalProperties: false
+    DeviceType:
+      type: string
+      enum:
+      - temperature
+      - heating
+      - light
+      - gate
+      - camera
+    Status:
+      type: string
+      enum:
+      - active
+      - inactive
+      - error
+    DeviceState:
+      oneOf:
+      - type: object
+        maxProperties: 0
+        additionalProperties: false
+      - type: object
+        properties:
+          power:
+            type: string
+            enum:
+            - 'on'
+            - 'off'
+        required:
+        - power
+        additionalProperties: false
+      - type: object
+        properties:
+          position:
+            type: string
+            enum:
+            - open
+            - closed
+        required:
+        - position
+        additionalProperties: false
+      - type: object
+        properties:
+          streaming:
+            type: boolean
+        required:
+        - streaming
+        additionalProperties: false
+    CommandInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+          - turn_on
+          - turn_off
+          - open
+          - close
+          - start_stream
+          - stop_stream
+      required:
+      - action
+      additionalProperties: false
+    Command:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        action:
+          type: string
+          maxLength: 30
+          minLength: 1
+        status:
+          type: string
+          const: completed
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/DeviceState'
+      required:
+      - id
+      - device_id
+      - action
+      - status
+      - created_at
+      - completed_at
+      - state
+      additionalProperties: false
+    Device:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        house_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        serial_number:
+          type: string
+          maxLength: 100
+          minLength: 1
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        location:
+          type: string
+          maxLength: 100
+          minLength: 1
+        unit:
+          type: string
+          maxLength: 20
+        status:
+          $ref: '#/components/schemas/Status'
+        state:
+          $ref: '#/components/schemas/DeviceState'
+        created_at:
+          type: string
+          format: date-time
+        last_updated:
+          type: string
+          format: date-time
+      required:
+      - id
+      - house_id
+      - serial_number
+      - name
+      - type
+      - location
+      - unit
+      - status
+      - state
+      - created_at
+      - last_updated
+      additionalProperties: false
+    Reading:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        value:
+          type: number
+          description: Конечное число; ноль допустим.
+        unit:
+          type: string
+          maxLength: 32
+        status:
+          $ref: '#/components/schemas/Status'
+        timestamp:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum:
+          - manual
+          - simulator
+      required:
+      - id
+      - device_id
+      - value
+      - unit
+      - status
+      - timestamp
+      - source
+      additionalProperties: false
+    TelemetryRecordedEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          const: telemetry.recorded
+        schema_version:
+          type: integer
+          const: 1
+        occurred_at:
+          type: string
+          format: date-time
+        house_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        data:
+          $ref: '#/components/schemas/Reading'
+      required:
+      - event_id
+      - event_type
+      - schema_version
+      - occurred_at
+      - house_id
+      - data
+      additionalProperties: false

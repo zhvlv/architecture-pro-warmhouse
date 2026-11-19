@@ -1,0 +1,32 @@
+@startuml
+!include <C4/C4_Component>
+!include ./_style.puml
+title Управление устройствами — компоненты Java-сервиса
+LAYOUT_TOP_DOWN()
+Container_Ext(facade, "Go-фасад / новый клиент", "HTTP/JSON")
+Container_Ext(telemetry, "Telemetry service", "Python", "Читает метаданные устройства")
+ContainerDb(db, "device-db", "PostgreSQL", "devices и device_commands")
+Container_Boundary(service, "Device service — MVP") {
+ Component(http, "ApiServer", "JDK HttpServer", "Маршрутизация, JSON, коды ошибок", $tags="mvp")
+ Component(application, "DeviceService", "Java class", "Валидация метаданных, допустимых типов и команд", $tags="mvp")
+ Component(state, "DeviceState", "Java class", "Матрица возможностей: отопление/свет, ворота, камера. Имитация выполнения", $tags="mvp")
+ Component(port, "DeviceRepository", "Java interface", "Контракт доступа к устройствам и журналу команд", $tags="mvp")
+ Component(jdbc, "JdbcDeviceRepository", "JDBC", "CRUD; блокировка строки и одна транзакция для команды и состояния", $tags="mvp")
+ Component(adapter, "Partner protocol adapters", "MQTT/HTTPS", "Реальные устройства, подтверждения и повторные доставки", $tags="planned")
+ Component(outbox, "Outbox publisher", "Worker", "Публикация фактов после фиксации транзакции", $tags="planned")
+}
+Container_Ext(broker, "Доменный брокер", "RabbitMQ", "Целевой этап")
+System_Ext(device, "Устройства партнёров", "Физические устройства")
+Rel(facade, http, "CRUD и команды", "REST")
+Rel(telemetry, http, "Получает устройство", "GET /api/v1/devices/{id}")
+Rel(http, application, "Передаёт запрос")
+Rel(application, port, "Вызывает операции")
+Rel(jdbc, port, "Реализует интерфейс")
+Rel(jdbc, state, "Проверяет переход и вычисляет новое состояние")
+Rel(jdbc, db, "Сохраняет метаданные, состояние и команду", "SQL")
+Rel(application, adapter, "В будущем передаёт команду реальному устройству")
+Rel(adapter, device, "Передаёт команду; получает подтверждение", "MQTT/TLS, HTTPS")
+Rel(outbox, db, "Читает outbox после commit", "SQL; план")
+Rel(outbox, broker, "Публикует факты", "AMQP; план")
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,7 @@
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+skinparam shadowing false
+skinparam wrapWidth 180
+skinparam maxMessageSize 170
+AddElementTag("planned", $bgColor="#EFF2F5", $fontColor="#465360", $borderColor="#8696A7", $legendText="Следующий этап: не входит в MVP")
+AddElementTag("mvp", $bgColor="#17677E", $fontColor="#FFFFFF", $borderColor="#124E60", $legendText="Реализовано в MVP")

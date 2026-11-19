@@ -1,0 +1,338 @@
+openapi: 3.1.0
+info:
+  title: Имитатор температуры — Go
+  version: 1.0.0
+  description: Источник случайных показаний для задания 5 и MVP. Значения с точностью 0,01 °C в диапазоне −20…45.
+    Два последовательных запроса для одной пары sensor_id/location дают разные значения. Это имитация, не показания
+    реального оборудования. Данные не хранятся постоянно.
+servers:
+- url: http://127.0.0.1:8081
+  description: Локальный учебный запуск
+x-implementation-status: implemented
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Проверить готовность
+      tags:
+      - Диагностика
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: ok
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+      description: Проверяет работу процесса, внешних зависимостей у имитатора нет.
+  /temperature:
+    get:
+      operationId: getTemperature
+      summary: Получить новое показание
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Temperature'
+              example:
+                value: 22.34
+                unit: °C
+                timestamp: '2026-11-18T14:00:00Z'
+                location: Living Room
+                status: active
+                sensor_id: '1'
+                sensor_type: temperature
+                description: Simulated temperature reading
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Conflicting sensor identifiers
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+      description: 'Если location отсутствует: 1→Living Room, 2→Bedroom, 3→Kitchen, иначе Unknown. Если ID отсутствует:
+        Living Room→1, Bedroom→2, Kitchen→3, иначе 0. Пустой запрос даёт Unknown/0. Если заданы оба параметра, пара
+        сохраняется без переопределения. Неизвестные query-параметры игнорируются.'
+      parameters:
+      - name: location
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Имя комнаты, пробелы по краям обрезаются
+        example: Living Room
+      - name: sensor_id
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Явный ID; передаётся отдельно от комнаты
+        example: '1'
+      - name: sensorId
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Совместимый псевдоним sensor_id. При одновременной передаче значения должны совпасть.
+  /temperature/{sensorId}:
+    get:
+      operationId: getTemperatureById
+      summary: Получить показание по ID
+      tags:
+      - API
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Temperature'
+              example:
+                value: 22.34
+                unit: °C
+                timestamp: '2026-11-18T14:00:00Z'
+                location: Bedroom
+                status: active
+                sensor_id: '2'
+                sensor_type: temperature
+                description: Simulated temperature reading
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Conflicting sensor identifiers
+        '404':
+          description: Ресурс не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Endpoint not found
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Method not allowed
+      description: Путь содержит строковый ID, не обязательно числовой. Если query также задаёт
+        ID, он должен совпасть с path. location можно передать независимо.
+      parameters:
+      - name: sensorId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+        example: '2'
+      - name: location
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Имя комнаты, пробелы по краям обрезаются
+        example: Living Room
+      - name: sensor_id
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Явный ID; передаётся отдельно от комнаты
+        example: '1'
+      - name: sensorId
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Совместимый псевдоним sensor_id. При одновременной передаче значения должны совпасть.
+security: []
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          minLength: 1
+      required:
+      - error
+      additionalProperties: false
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          const: ok
+      required:
+      - status
+      additionalProperties: false
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+      required:
+      - message
+      additionalProperties: false
+    DeviceType:
+      type: string
+      enum:
+      - temperature
+      - heating
+      - light
+      - gate
+      - camera
+    Status:
+      type: string
+      enum:
+      - active
+      - inactive
+      - error
+    DeviceState:
+      oneOf:
+      - type: object
+        maxProperties: 0
+        additionalProperties: false
+      - type: object
+        properties:
+          power:
+            type: string
+            enum:
+            - 'on'
+            - 'off'
+        required:
+        - power
+        additionalProperties: false
+      - type: object
+        properties:
+          position:
+            type: string
+            enum:
+            - open
+            - closed
+        required:
+        - position
+        additionalProperties: false
+      - type: object
+        properties:
+          streaming:
+            type: boolean
+        required:
+        - streaming
+        additionalProperties: false
+    CommandInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+          - turn_on
+          - turn_off
+          - open
+          - close
+          - start_stream
+          - stop_stream
+      required:
+      - action
+      additionalProperties: false
+    Command:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        action:
+          type: string
+          maxLength: 30
+          minLength: 1
+        status:
+          type: string
+          const: completed
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/DeviceState'
+      required:
+      - id
+      - device_id
+      - action
+      - status
+      - created_at
+      - completed_at
+      - state
+      additionalProperties: false
+    Temperature:
+      type: object
+      properties:
+        value:
+          type: number
+          minimum: -20
+          maximum: 45
+        unit:
+          type: string
+          const: °C
+        timestamp:
+          type: string
+          format: date-time
+        location:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          const: active
+        sensor_id:
+          type: string
+          minLength: 1
+        sensor_type:
+          type: string
+          const: temperature
+        description:
+          type: string
+          minLength: 1
+      required:
+      - value
+      - unit
+      - timestamp
+      - location
+      - status
+      - sensor_id
+      - sensor_type
+      - description
+      additionalProperties: false

@@ -1,0 +1,28 @@
+@startuml
+!include <C4/C4_Component>
+!include ./_style.puml
+title Дома и модули — компоненты целевого сервиса (не реализован в MVP)
+LAYOUT_TOP_DOWN()
+Container_Ext(api, "API Gateway", "HTTPS/JSON", "Передаёт идентификатор пользователя")
+Container_Ext(devices, "Device service", "Java", "Проверяет доступ и активный модуль")
+System_Ext(iam, "OIDC-провайдер", "Ключи JWT и идентичность")
+ContainerDb(db, "БД домов и модулей", "PostgreSQL", "users, houses, module_types, house_modules")
+Container_Boundary(service, "Homes & Modules — план") {
+ Component(controller, "House API", "REST controller", "Дома пользователя, каталог модулей и подключение комплектов", $tags="planned")
+ Component(access, "HouseAccessPolicy", "Domain policy", "owner_id из JWT; проверка доступа к дому", $tags="planned")
+ Component(catalog, "ModuleCatalog", "Domain service", "Доступные типы модулей и их возможности", $tags="planned")
+ Component(subscription, "ModuleActivationService", "Application service", "Включение/отключение модуля для дома без создания устройств", $tags="planned")
+ Component(repository, "HouseRepository", "Repository", "Транзакции домов и активаций; уникальность house + module", $tags="planned")
+}
+Rel(api, controller, "Запрашивает дома и управляет модулями", "REST")
+Rel(devices, controller, "Проверяет право регистрации типа устройства в доме", "REST")
+Rel(controller, access, "Проверяет владельца")
+Rel(access, iam, "Проверяет JWT по опубликованным ключам", "JWKS")
+Rel(controller, catalog, "Читает каталог")
+Rel(controller, subscription, "Выполняет операцию")
+Rel(subscription, access, "Проверяет доступ")
+Rel(subscription, repository, "Сохраняет активацию")
+Rel(catalog, repository, "Читает типы модулей")
+Rel(repository, db, "Читает и изменяет", "SQL")
+SHOW_LEGEND()
+@enduml

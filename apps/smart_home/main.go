@@ -17,15 +17,8 @@ import (
 )
 
 func main() {
-	// Set up database connection
-	dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/smarthome")
-	database, err := db.New(dbURL)
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
-	}
-	defer database.Close()
-
-	log.Println("Connected to database successfully")
+	// Select application mode
+	mode := getEnv("MIGRATION_MODE", "legacy")
 
 	// Initialize temperature service
 	temperatureAPIURL := getEnv("TEMPERATURE_API_URL", "http://temperature-api:8081")
@@ -35,19 +28,59 @@ func main() {
 	// Initialize router
 	router := gin.Default()
 
-	// Health check endpoint
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
-		})
-	})
-
 	// API routes
 	apiRoutes := router.Group("/api/v1")
 
-	// Register sensor routes
-	sensorHandler := handlers.NewSensorHandler(database, temperatureService)
-	sensorHandler.RegisterRoutes(apiRoutes)
+	switch mode {
+	case "legacy":
+		// Set up database connection
+		dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/smarthome")
+		database, err := db.New(dbURL)
+		if err != nil {
+			log.Fatalf("Unable to connect to database: %v\n", err)
+		}
+		defer database.Close()
+
+		log.Println("Connected to database successfully")
+
+		// Register sensor routes
+		sensorHandler := handlers.NewSensorHandler(database, temperatureService)
+		sensorHandler.RegisterRoutes(apiRoutes)
+
+		// Health check endpoint
+		router.GET("/health", func(c *gin.Context) {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+			defer cancel()
+			if err := database.Pool.Ping(ctx); err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database is unavailable"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		})
+	case "services":
+		// Initialize microservice client
+		client := services.NewMicroserviceClient(
+			getEnv("DEVICE_API_URL", "http://device-service:8082"),
+			getEnv("TELEMETRY_API_URL", "http://telemetry-service:8083"),
+		)
+
+		// Register sensor routes
+		microserviceHandler := handlers.NewMicroserviceHandler(client, temperatureService)
+		microserviceHandler.RegisterRoutes(apiRoutes)
+
+		// Health check endpoint
+		router.GET("/health", func(c *gin.Context) {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+			defer cancel()
+			if err := client.Health(ctx); err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Required service is unavailable"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		})
+	default:
+		log.Fatalf("Unknown MIGRATION_MODE %q; expected legacy or services", mode)
+	}
 
 	// Start server
 	srv := &http.Server{

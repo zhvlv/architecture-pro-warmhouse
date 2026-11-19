@@ -1,0 +1,169 @@
+@startuml
+title «Тёплый дом» — логическая модель данных\nMVP и целевые расширения
+left to right direction
+hide circle
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam entityBackgroundColor #FFFFFF
+skinparam entityBorderColor #475569
+skinparam packageBorderColor #64748B
+skinparam ArrowColor #475569
+
+package "Идентификация\nВнешний OIDC IdP · план" #F1F5F9 {
+  entity "User" as User {
+    * id : UUID <<PK / subject>>
+    --
+    display_name : VARCHAR(200)
+    email : VARCHAR(254)
+  }
+}
+
+package "Дома и модули\nHomes · план" #DBEAFE {
+  entity "House" as House {
+    * id : BIGINT <<PK>>
+    * owner_id : UUID <<внешняя ссылка>>
+    --
+    name : VARCHAR(100)
+    address : TEXT
+    region : VARCHAR(100)
+    created_at : TIMESTAMPTZ
+  }
+  entity "ModuleType" as ModuleType {
+    * code : VARCHAR(30) <<PK>>
+    --
+    name : VARCHAR(100)
+  }
+  entity "HouseModule" as HouseModule {
+    * house_id : BIGINT <<PK, FK>>
+    * module_code : VARCHAR(30) <<PK, FK>>
+    --
+    enabled : BOOLEAN
+    configured_at : TIMESTAMPTZ
+  }
+  entity "ModuleDeviceType" as ModuleDeviceType {
+    * module_code : VARCHAR(30) <<PK, FK>>
+    * device_type_code : VARCHAR(30) <<PK, внешняя ссылка>>
+  }
+}
+
+package "Устройства\nDevices · Java · MVP" #DCFCE7 {
+  entity "DeviceType\nСправочник: план; сейчас код/CHECK" as DeviceType #F8FAFC {
+    * code : VARCHAR(30) <<PK>>
+    --
+    allowed_commands : JSONB
+  }
+  entity "Device\nТаблица devices" as Device {
+    * id : BIGINT <<PK>>
+    * house_id : BIGINT <<внешняя ссылка>>
+    module_code : VARCHAR(30) <<план, nullable>>
+    * serial_number : VARCHAR(100) <<UNIQUE>>
+    * type : VARCHAR(30)
+    --
+    * name : VARCHAR(100)
+    * location : VARCHAR(100)
+    * unit : VARCHAR(20)
+    * status : VARCHAR(20)
+    * state : JSONB
+    * created_at : TIMESTAMPTZ
+    * last_updated : TIMESTAMPTZ
+    deleted_at : TIMESTAMPTZ <<nullable>>
+  }
+  entity "Command\nТаблица device_commands" as Command {
+    * id : UUID <<PK>>
+    * device_id : BIGINT <<FK>>
+    scenario_run_id : UUID <<план, nullable>>
+    --
+    * action : VARCHAR(30)
+    * status : VARCHAR(20)
+    * created_at : TIMESTAMPTZ
+    * completed_at : TIMESTAMPTZ
+    * state : JSONB
+  }
+}
+
+package "Телеметрия\nTelemetry · Python · MVP" #FEF3C7 {
+  entity "Telemetry\nТаблица readings" as Telemetry {
+    * id : BIGINT <<PK>>
+    * device_id : BIGINT <<внешняя ссылка>>
+    --
+    metric : VARCHAR(64) <<план>>
+    * value : DOUBLE PRECISION
+    * unit : VARCHAR(32)
+    * status : VARCHAR(16)
+    * observed_at : TIMESTAMPTZ
+    * source : VARCHAR(16)
+    * received_at : TIMESTAMPTZ
+  }
+}
+
+package "Автоматизация\nAutomation · план" #FCE7F3 {
+  entity "AutomationRule\nВ API: Scenario" as AutomationRule {
+    * id : BIGINT <<PK>>
+    * house_id : BIGINT <<внешняя ссылка>>
+    --
+    name : VARCHAR(100)
+    enabled : BOOLEAN
+    created_at : TIMESTAMPTZ
+    updated_at : TIMESTAMPTZ
+  }
+  entity "RuleCondition" as RuleCondition {
+    * rule_id : BIGINT <<PK, FK>>
+    * device_id : BIGINT <<внешняя ссылка>>
+    --
+    metric : VARCHAR(64)
+    operator : VARCHAR(4)
+    threshold : DOUBLE PRECISION
+  }
+  entity "RuleAction" as RuleAction {
+    * rule_id : BIGINT <<PK, FK>>
+    * position : SMALLINT <<PK>>
+    * device_id : BIGINT <<внешняя ссылка>>
+    --
+    action : VARCHAR(30)
+  }
+  entity "ScenarioRun" as ScenarioRun {
+    * id : UUID <<PK>>
+    * scenario_id : BIGINT <<FK>>
+    --
+    status : VARCHAR(16)
+    requested_at : TIMESTAMPTZ
+    completed_at : TIMESTAMPTZ <<nullable>>
+    error : TEXT <<nullable>>
+  }
+}
+
+User ||..o{ House
+House ||--o{ HouseModule
+ModuleType ||--o{ HouseModule
+ModuleType ||--o{ ModuleDeviceType
+DeviceType ||..o{ ModuleDeviceType
+House ||..o{ Device
+HouseModule |o..o{ Device
+DeviceType ||--o{ Device
+Device ||--o{ Command
+Device ||..o{ Telemetry
+House ||..o{ AutomationRule
+AutomationRule ||--|| RuleCondition
+AutomationRule ||--|{ RuleAction
+AutomationRule ||--o{ ScenarioRun
+Device ||..o{ RuleCondition
+Device ||..o{ RuleAction
+ScenarioRun |o..o{ Command
+
+legend bottom
+  <b>Границы и статус</b>
+  Цвет пакета — владелец данных, а не одна общая БД.
+  Сплошная связь — внутри контекста; фактические FK заданы в SQL MVP.
+  Пунктир — логическая межсервисная ссылка, <b>не SQL foreign key</b>.
+  Пометка «план» — сущность/поле не реализованы в MVP.
+  MVP: house_id по умолчанию 1; нет module_code и metric.
+  HTTP timestamp соответствует readings.observed_at.
+  User UUID — допущение проектного OIDC-контракта.
+  Типы устройств: temperature, heating, light, gate, camera.
+  Модули дома: heating, light, gate, camera.
+endlegend
+@enduml
