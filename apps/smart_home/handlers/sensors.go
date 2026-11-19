@@ -42,6 +42,16 @@ func (h *SensorHandler) RegisterRoutes(router *gin.RouterGroup) {
 	}
 }
 
+// positiveID parses a positive sensor ID from the request.
+func positiveID(c *gin.Context) (int, bool) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sensor ID"})
+		return 0, false
+	}
+	return id, true
+}
+
 // GetSensors handles GET /api/v1/sensors
 func (h *SensorHandler) GetSensors(c *gin.Context) {
 	sensors, err := h.DB.GetSensors(context.Background())
@@ -53,16 +63,18 @@ func (h *SensorHandler) GetSensors(c *gin.Context) {
 	// Update temperature sensors with real-time data from the external API
 	for i, sensor := range sensors {
 		if sensor.Type == models.Temperature {
-			tempData, err := h.TemperatureService.GetTemperatureByID(fmt.Sprintf("%d", sensor.ID))
-			if err == nil {
-				// Update sensor with real-time data
-				sensors[i].Value = tempData.Value
-				sensors[i].Status = tempData.Status
-				sensors[i].LastUpdated = tempData.Timestamp
-				log.Printf("Updated temperature data for sensor %d from external API", sensor.ID)
-			} else {
+			tempData, err := h.TemperatureService.GetTemperatureForSensor(c.Request.Context(), strconv.Itoa(sensor.ID), sensor.Location)
+			if err != nil {
 				log.Printf("Failed to fetch temperature data for sensor %d: %v", sensor.ID, err)
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Temperature service is unavailable"})
+				return
 			}
+
+			// Update sensor with real-time data
+			sensors[i].Value = tempData.Value
+			sensors[i].Status = tempData.Status
+			sensors[i].LastUpdated = tempData.Timestamp
+			log.Printf("Updated temperature data for sensor %d from external API", sensor.ID)
 		}
 	}
 
@@ -71,9 +83,8 @@ func (h *SensorHandler) GetSensors(c *gin.Context) {
 
 // GetSensorByID handles GET /api/v1/sensors/:id
 func (h *SensorHandler) GetSensorByID(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sensor ID"})
+	id, ok := positiveID(c)
+	if !ok {
 		return
 	}
 
@@ -85,16 +96,18 @@ func (h *SensorHandler) GetSensorByID(c *gin.Context) {
 
 	// If this is a temperature sensor, fetch real-time data from the temperature API
 	if sensor.Type == models.Temperature {
-		tempData, err := h.TemperatureService.GetTemperatureByID(fmt.Sprintf("%d", sensor.ID))
-		if err == nil {
-			// Update sensor with real-time data
-			sensor.Value = tempData.Value
-			sensor.Status = tempData.Status
-			sensor.LastUpdated = tempData.Timestamp
-			log.Printf("Updated temperature data for sensor %d from external API", sensor.ID)
-		} else {
+		tempData, err := h.TemperatureService.GetTemperatureForSensor(c.Request.Context(), strconv.Itoa(sensor.ID), sensor.Location)
+		if err != nil {
 			log.Printf("Failed to fetch temperature data for sensor %d: %v", sensor.ID, err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Temperature service is unavailable"})
+			return
 		}
+
+		// Update sensor with real-time data
+		sensor.Value = tempData.Value
+		sensor.Status = tempData.Status
+		sensor.LastUpdated = tempData.Timestamp
+		log.Printf("Updated temperature data for sensor %d from external API", sensor.ID)
 	}
 
 	c.JSON(http.StatusOK, sensor)
@@ -111,7 +124,7 @@ func (h *SensorHandler) GetTemperatureByLocation(c *gin.Context) {
 	// Fetch temperature data from the external API
 	tempData, err := h.TemperatureService.GetTemperature(location)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": fmt.Sprintf("Failed to fetch temperature data: %v", err),
 		})
 		return
@@ -147,9 +160,8 @@ func (h *SensorHandler) CreateSensor(c *gin.Context) {
 
 // UpdateSensor handles PUT /api/v1/sensors/:id
 func (h *SensorHandler) UpdateSensor(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sensor ID"})
+	id, ok := positiveID(c)
+	if !ok {
 		return
 	}
 
@@ -170,14 +182,12 @@ func (h *SensorHandler) UpdateSensor(c *gin.Context) {
 
 // DeleteSensor handles DELETE /api/v1/sensors/:id
 func (h *SensorHandler) DeleteSensor(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sensor ID"})
+	id, ok := positiveID(c)
+	if !ok {
 		return
 	}
 
-	err = h.DB.DeleteSensor(context.Background(), id)
-	if err != nil {
+	if err := h.DB.DeleteSensor(context.Background(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -185,17 +195,22 @@ func (h *SensorHandler) DeleteSensor(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Sensor deleted successfully"})
 }
 
+// ValueUpdate represents a sensor value and status update.
+type ValueUpdate struct {
+	Value  *float64 `json:"value" binding:"required"`
+	Status string   `json:"status" binding:"required,oneof=active inactive error"`
+}
+
 // UpdateSensorValue handles PATCH /api/v1/sensors/:id/value
 func (h *SensorHandler) UpdateSensorValue(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sensor ID"})
+	id, ok := positiveID(c)
+	if !ok {
 		return
 	}
 
 	var request struct {
-		Value  float64 `json:"value" binding:"required"`
-		Status string  `json:"status" binding:"required"`
+		Value  *float64 `json:"value" binding:"required"`
+		Status string   `json:"status" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -203,8 +218,7 @@ func (h *SensorHandler) UpdateSensorValue(c *gin.Context) {
 		return
 	}
 
-	err = h.DB.UpdateSensorValue(context.Background(), id, request.Value, request.Status)
-	if err != nil {
+	if err := h.DB.UpdateSensorValue(context.Background(), id, *request.Value, request.Status); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

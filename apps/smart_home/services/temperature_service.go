@@ -1,9 +1,11 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -37,31 +39,26 @@ func NewTemperatureService(baseURL string) *TemperatureService {
 
 // GetTemperature fetches temperature data for a specific location
 func (s *TemperatureService) GetTemperature(location string) (*TemperatureResponse, error) {
-	url := fmt.Sprintf("%s/temperature?location=%s", s.BaseURL, location)
+	return s.GetTemperatureForSensor(context.Background(), "", location)
+}
 
-	resp, err := s.HTTPClient.Get(url)
+// GetTemperatureForSensor fetches a reading using the sensor ID and location
+func (s *TemperatureService) GetTemperatureForSensor(ctx context.Context, sensorID, location string) (*TemperatureResponse, error) {
+	query := url.Values{}
+	if location != "" {
+		query.Set("location", location)
+	}
+	if sensorID != "" {
+		query.Set("sensor_id", sensorID)
+	}
+
+	url := s.BaseURL + "/temperature?" + query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching temperature data: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var temperatureResp TemperatureResponse
-	if err := json.NewDecoder(resp.Body).Decode(&temperatureResp); err != nil {
-		return nil, fmt.Errorf("error decoding temperature response: %w", err)
-	}
-
-	return &temperatureResp, nil
-}
-
-// GetTemperatureByID fetches temperature data for a specific sensor ID
-func (s *TemperatureService) GetTemperatureByID(sensorID string) (*TemperatureResponse, error) {
-	url := fmt.Sprintf("%s/temperature/%s", s.BaseURL, sensorID)
-
-	resp, err := s.HTTPClient.Get(url)
+	resp, err := s.HTTPClient.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching temperature data: %w", err)
 	}
