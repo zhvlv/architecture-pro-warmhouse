@@ -1,0 +1,62 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+title Device service — классы обработки команд (реализованный код)
+class ApiServer {
+  - service: DeviceService
+  - handle(exchange): void
+}
+class DeviceService {
+  - repository: DeviceRepository
+  - clock: Clock
+  + command(id: long, body: Map): DeviceCommand
+  + command(id: String): DeviceCommand
+  + get(id: long): Device
+}
+interface DeviceRepository {
+  + find(id: long): Optional<Device>
+  + issueCommand(deviceId: long, action: String, now: Instant): DeviceCommand
+  + findCommand(id: UUID): Optional<DeviceCommand>
+}
+class JdbcDeviceRepository {
+  - jdbcUrl: String
+  + issueCommand(deviceId, action, now): DeviceCommand
+}
+class DeviceState {
+  {static} + after(type: String, action: String): Map
+}
+class Device <<record>> {
+  id: long
+  houseId: long
+  type: String
+  state: Map
+  lastUpdated: Instant
+}
+class DeviceCommand <<record>> {
+  id: UUID
+  deviceId: long
+  action: String
+  status: String
+  createdAt: Instant
+  completedAt: Instant
+  state: Map
+}
+ApiServer --> DeviceService
+DeviceService --> DeviceRepository
+JdbcDeviceRepository ..|> DeviceRepository
+JdbcDeviceRepository --> DeviceState
+DeviceRepository --> Device
+DeviceRepository --> DeviceCommand
+note right of JdbcDeviceRepository
+issueCommand:
+1. SELECT ... FOR UPDATE
+2. Проверить тип и действие
+3. Обновить devices.state
+4. INSERT device_commands
+5. COMMIT
+При ошибке — ROLLBACK.
+Исполнение в MVP имитируется.
+end note
+@enduml

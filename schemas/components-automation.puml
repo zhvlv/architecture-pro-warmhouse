@@ -1,0 +1,32 @@
+@startuml
+!include <C4/C4_Component>
+!include ./_style.puml
+title Сценарии — компоненты целевого сервиса (не реализован в MVP)
+LAYOUT_TOP_DOWN()
+Container_Ext(gateway, "API Gateway", "HTTPS/JSON")
+Container_Ext(events, "Брокер доменных событий", "RabbitMQ", "telemetry.recorded и command.completed")
+Container_Ext(devices, "Device service", "REST", "Принимает команды")
+Container_Ext(homes, "Homes & Modules", "REST", "Права на дом и модули")
+ContainerDb(db, "БД сценариев", "PostgreSQL", "Правила, действия, запуски и inbox")
+Container_Boundary(service, "Automation — план") {
+ Component(api, "Scenario API", "REST controller", "Создание, чтение, включение и ручной запуск сценария", $tags="planned")
+ Component(policy, "ScenarioAccessPolicy", "Domain policy", "Права владельца и принадлежность всех устройств одному дому", $tags="planned")
+ Component(consumer, "TelemetryConsumer", "AMQP consumer", "Проверяет event_id и игнорирует повторную доставку", $tags="planned")
+ Component(engine, "RuleEngine", "Domain service", "Сопоставляет тип измерения, порог и текущее правило", $tags="planned")
+ Component(executor, "ActionExecutor", "Application service", "Отправляет команды с устойчивым ключом идемпотентности", $tags="planned")
+ Component(repo, "ScenarioRepository", "Repository", "Правила и результаты; дедупликация inbox", $tags="planned")
+}
+Rel(gateway, api, "Настраивает и запускает правила", "REST")
+Rel(api, policy, "Проверяет доступ")
+Rel(policy, homes, "Проверяет владельца и активный модуль", "REST")
+Rel(api, repo, "Сохраняет правило")
+Rel(api, executor, "Запускает вручную")
+Rel(events, consumer, "Доставляет событие", "AMQP, at-least-once")
+Rel(consumer, repo, "Проверяет inbox и читает правила")
+Rel(consumer, engine, "Передаёт новое показание")
+Rel(engine, executor, "Формирует действия")
+Rel(executor, devices, "Создаёт команды", "REST + Idempotency-Key; план")
+Rel(executor, repo, "Записывает результат запуска")
+Rel(repo, db, "Читает и изменяет", "SQL")
+SHOW_LEGEND()
+@enduml
